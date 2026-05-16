@@ -1,6 +1,6 @@
-import { SUITS } from '../../constants/game.js'
-import { G, ff } from '../../constants/theme.js'
-import Button from '../ui/Button.jsx'
+import { SUITS } from '../../constants/game'
+import { G, ff } from '../../constants/theme'
+import Button from '../ui/Button'
 
 /**
  * HomeScreen — Écran d'accueil de l'application.

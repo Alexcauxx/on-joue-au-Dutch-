@@ -1,4 +1,4 @@
-import { G } from '../../constants/theme.js'
+import { G } from '../../constants/theme'
 
 /**
  * Toggle — Interrupteur ON/OFF (switch iOS-style).

@@ -10,8 +10,8 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
-import { buildDeck, shuffle, totalScore } from '../utils/cards.js'
-import { DIFF_THRESHOLD } from '../constants/game.js'
+import { buildDeck, shuffle, totalScore } from '../utils/cards'
+import { DIFF_THRESHOLD } from '../constants/game'
 
 export function useGame({ diff, rules, onEnd }) {
   // ── État initial ─────────────────────────────────────────────

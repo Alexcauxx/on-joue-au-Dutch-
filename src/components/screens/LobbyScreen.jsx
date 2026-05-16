@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { G, ff } from '../../constants/theme.js'
-import Button from '../ui/Button.jsx'
-import FaceCard from '../cards/FaceCard.jsx'
+import { G, ff } from '../../constants/theme'
+import Button from '../ui/Button'
+import FaceCard from '../cards/FaceCard'
 
 /** Cartes de prévisualisation affichées dans le lobby */
 const PREVIEW_CARDS = [

@@ -1,4 +1,4 @@
-import { SUITS, VALUES, PTS, KING_POINTS } from '../constants/game.js'
+import { SUITS, VALUES, PTS, KING_POINTS } from '../constants/game'
 
 /**
  * Construit un jeu de 52 cartes mélangé.

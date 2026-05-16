@@ -1,7 +1,7 @@
-import { G, ff } from '../../constants/theme.js'
-import { totalScore } from '../../utils/cards.js'
-import FaceCard from '../cards/FaceCard.jsx'
-import Button from '../ui/Button.jsx'
+import { G, ff } from '../../constants/theme'
+import { totalScore } from '../../utils/cards'
+import FaceCard from '../cards/FaceCard'
+import Button from '../ui/Button'
 
 /**
  * ScoreScreen — Affiche les résultats en fin de partie.

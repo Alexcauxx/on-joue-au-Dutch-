@@ -1,6 +1,6 @@
-import { G, ff } from '../../constants/theme.js'
-import Button from '../ui/Button.jsx'
-import Toggle from '../ui/Toggle.jsx'
+import { G, ff } from '../../constants/theme'
+import Button from '../ui/Button'
+import Toggle from '../ui/Toggle'
 
 /** Options de règles affichées dans le modal */
 const RULE_OPTIONS = [

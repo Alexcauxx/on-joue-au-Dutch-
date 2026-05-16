@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react'
-import { Avatar } from './AuthScreen.jsx'
+import { Avatar } from './AuthScreen'
 
 const AVATAR_COLORS = [
   '#d4a853','#5bc97b','#e06060','#60a0e0',

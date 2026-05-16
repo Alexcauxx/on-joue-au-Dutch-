@@ -1,4 +1,4 @@
-import { G, ff } from '../../constants/theme.js'
+import { G, ff } from '../../constants/theme'
 
 /**
  * Button — Bouton réutilisable avec plusieurs variantes visuelles.

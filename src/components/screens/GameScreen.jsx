@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { G, ff } from '../../constants/theme.js'
-import { useGame } from '../../hooks/useGame.js'
-import { useMultiplayerGame } from '../../hooks/useMultiplayerGame.js'
-import FaceCard from '../cards/FaceCard.jsx'
-import BackCard from '../cards/BackCard.jsx'
-import Button from '../ui/Button.jsx'
-import SettingsModal from '../modals/SettingsModal.jsx'
+import { G, ff } from '../../constants/theme'
+import { useGame } from '../../hooks/useGame'
+import { useMultiplayerGame } from '../../hooks/useMultiplayerGame'
+import FaceCard from '../cards/FaceCard'
+import BackCard from '../cards/BackCard'
+import Button from '../ui/Button'
+import SettingsModal from '../modals/SettingsModal'
 
 function mapMultiplayerGameStateToScreenState(gameState, playerId, localPVis = [], localOVis = []) {
   if (!gameState) return null

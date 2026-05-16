@@ -1,5 +1,5 @@
-import { RED_SUITS } from '../../constants/game.js'
-import { G, ff } from '../../constants/theme.js'
+import { RED_SUITS } from '../../constants/game'
+import { G, ff } from '../../constants/theme'
 
 /**
  * FaceCard — Carte retournée (visible), face avant.
