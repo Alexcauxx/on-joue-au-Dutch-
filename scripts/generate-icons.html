@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Générateur d'icônes Dutch</title>
+  <style>
+    body { font-family: sans-serif; background: #0a0f1e; color: #f0ebe0;
+           display: flex; flex-direction: column; align-items: center;
+           justify-content: center; min-height: 100vh; gap: 24px; margin: 0; }
+    h1   { font-size: 24px; }
+    p    { color: rgba(240,235,224,.6); font-size: 14px; text-align: center; max-width: 400px; line-height: 1.6; }
+    button {
+      padding: 16px 32px; border-radius: 14px; border: none; cursor: pointer;
+      background: linear-gradient(135deg, #d4a853, #f0cb72); color: #080d14;
+      font-size: 16px; font-weight: 700;
+    }
+    canvas { border-radius: 16px; margin-top: 16px; }
+    .sizes { display: flex; gap: 24px; align-items: flex-end; margin-top: 16px; }
+    .size-label { text-align: center; font-size: 11px; color: rgba(240,235,224,.4); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🃏 Générateur d'icônes Dutch</h1>
+  <p>
+    Clique sur le bouton pour générer et télécharger les 3 fichiers PNG nécessaires.<br>
+    Place-les ensuite dans le dossier <strong>public/icons/</strong> de ton projet.
+  </p>
+
+  <div class="sizes">
+    <div><canvas id="c180" width="180" height="180"></canvas><div class="size-label">180×180<br>Apple</div></div>
+    <div><canvas id="c192" width="192" height="192"></canvas><div class="size-label">192×192<br>Android</div></div>
+    <div><canvas id="c512" width="512" height="512"></canvas><div class="size-label">512×512<br>Splash</div></div>
+  </div>
+
+  <button onclick="generateAndDownload()">
+    Télécharger les 3 icônes PNG
+  </button>
+
+  <script>
+    // Dessine le logo Dutch (fond navy + losange doré)
+    function drawIcon(canvas) {
+      const ctx = canvas.getContext('2d')
+      const s   = canvas.width
+
+      // Fond arrondi navy
+      const radius = s * 0.2
+      ctx.fillStyle = '#1a237e'
+      ctx.beginPath()
+      ctx.moveTo(radius, 0)
+      ctx.lineTo(s - radius, 0)
+      ctx.quadraticCurveTo(s, 0, s, radius)
+      ctx.lineTo(s, s - radius)
+      ctx.quadraticCurveTo(s, s, s - radius, s)
+      ctx.lineTo(radius, s)
+      ctx.quadraticCurveTo(0, s, 0, s - radius)
+      ctx.lineTo(0, radius)
+      ctx.quadraticCurveTo(0, 0, radius, 0)
+      ctx.closePath()
+      ctx.fill()
+
+      // Motif géométrique subtil
+      ctx.strokeStyle = 'rgba(212,168,83,0.12)'
+      ctx.lineWidth = s * 0.015
+      const inset = s * 0.06
+      ctx.strokeRect(inset, inset, s - inset * 2, s - inset * 2)
+
+      // Losange doré
+      const cx = s / 2
+      const cy = s / 2
+      const d  = s * 0.36
+
+      ctx.fillStyle = '#d4a853'
+      ctx.beginPath()
+      ctx.moveTo(cx,     cy - d)  // haut
+      ctx.lineTo(cx + d, cy)      // droite
+      ctx.lineTo(cx,     cy + d)  // bas
+      ctx.lineTo(cx - d, cy)      // gauche
+      ctx.closePath()
+      ctx.fill()
+
+      // Reflet sur le losange
+      const grad = ctx.createLinearGradient(cx - d, cy - d, cx + d, cy)
+      grad.addColorStop(0, 'rgba(255,255,255,0.25)')
+      grad.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.moveTo(cx,     cy - d)
+      ctx.lineTo(cx + d, cy)
+      ctx.lineTo(cx,     cy + d)
+      ctx.lineTo(cx - d, cy)
+      ctx.closePath()
+      ctx.fill()
+
+      // Lettre D au centre
+      ctx.fillStyle = '#080d14'
+      ctx.font = `bold ${s * 0.28}px "Georgia", serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('D', cx, cy + s * 0.02)
+    }
+
+    function download(canvas, filename) {
+      return new Promise(resolve => {
+        canvas.toBlob(blob => {
+          const url  = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href     = url
+          link.download = filename
+          link.click()
+          setTimeout(() => { URL.revokeObjectURL(url); resolve() }, 300)
+        }, 'image/png')
+      })
+    }
+
+    async function generateAndDownload() {
+      const configs = [
+        { id: 'c180', name: 'apple-touch-icon.png' },
+        { id: 'c192', name: 'icon-192.png' },
+        { id: 'c512', name: 'icon-512.png' },
+      ]
+
+      for (const { id, name } of configs) {
+        const canvas = document.getElementById(id)
+        drawIcon(canvas)
+        await download(canvas, name)
+        await new Promise(r => setTimeout(r, 200))
+      }
+
+      alert('✓ 3 fichiers PNG téléchargés !\n\nPlace-les dans : public/icons/')
+    }
+
+    // Prévisualisation immédiate
+    window.onload = () => {
+      ['c180','c192','c512'].forEach(id => drawIcon(document.getElementById(id)))
+    }
+  </script>
+</body>
+</html>
