@@ -118,19 +118,37 @@ export default function GameScreen({ rules, playerName, diff, onEnd, onHome, gam
   }
 
   const handlePeek = (index) => {
-    if (!peek || localPVis[index] || gs?.peeks >= 2) return
+    const alreadyPeeked = Boolean(playerId && gs?.hands?.[playerId]?.peekedIndices?.includes(index))
+    console.log('INITIAL_PEEK_PHASE_ACTIVE', { phase: gs?.phase, playerId })
+    console.log('CARD_CLICK_ATTEMPT', { index, playerId, phase: gs?.phase, peeks: gs?.peeks, alreadyPeeked })
+
+    if (!peek || gs?.phase !== 'peek' || localPVis[index] || gs?.peeks >= 2 || alreadyPeeked) {
+      console.log('CARD_CLICK_BLOCKED', {
+        index,
+        playerId,
+        phase: gs?.phase,
+        reason: !peek ? 'NO_PEEK_ACTION'
+          : gs?.phase !== 'peek' ? 'NOT_PEEK_PHASE'
+          : localPVis[index] ? 'ALREADY_VISIBLE'
+          : gs?.peeks >= 2 ? 'MAX_PEEKS_REACHED'
+          : alreadyPeeked ? 'ALREADY_PEEKED' : 'UNKNOWN',
+      })
+      return
+    }
+
+    console.log('CARD_CLICK_ALLOWED', { index, playerId, phase: gs?.phase, peeks: gs?.peeks })
     revealTempVisibility(setLocalPVis, index)
     peek(index)
   }
 
   const handlePeekOwnCard = (index) => {
-    if (!peekOwnCard) return
+    if (!isPlayerTurn || !peekOwnCard) return
     revealTempVisibility(setLocalPVis, index)
     peekOwnCard(index)
   }
 
   const handlePeekOpponentCard = (index) => {
-    if (!peekOpponentCard) return
+    if (!isPlayerTurn || !peekOpponentCard) return
     revealTempVisibility(setLocalOVis, index)
     peekOpponentCard(index)
   }
@@ -214,10 +232,10 @@ export default function GameScreen({ rules, playerName, diff, onEnd, onHome, gam
             {(gs.oH ?? []).map((card, i) => {
               const special = gs.specialAction
               const isSpecialActor = special && special.actorId === playerId
-              const canTargetOpponent = (gs.phase === 'p_hold' && gs.held && (
+              const canTargetOpponent = isPlayerTurn && ((gs.phase === 'p_hold' && gs.held && (
                 (gs.held.v === 'Q' && localRules.queenSwap) ||
                 (gs.held.v === 'J' && localRules.jackPeek && !gs.jackPeekUsed)
-              )) || (isSpecialActor && special?.type === 'queen') || (isSpecialActor && special?.type === 'jack' && localRules.jackPeek && !gs.jackPeekUsed)
+              )) || (isSpecialActor && special?.type === 'queen') || (isSpecialActor && special?.type === 'jack' && localRules.jackPeek && !gs.jackPeekUsed))
               const isSelectedOpponent = gs.queenSwapTarget === i
 
               return gs.oVis?.[i]
@@ -354,16 +372,38 @@ export default function GameScreen({ rules, playerName, diff, onEnd, onHome, gam
               const isSpecialActor = special && special.actorId === playerId
               const isQueenSpecialWithTarget = isSpecialActor && special?.type === 'queen' && gs.queenSwapTarget !== null
               const isJackSpecial = isSpecialActor && special?.type === 'jack' && localRules.jackPeek && !gs.jackPeekUsed && !visible
-              const canClick = gs.phase === 'peek' || gs.phase === 'p_hold' || (gs.phase === 'p_draw' && localRules.discardMatch) || (gs.phase === 'p_hold' && heldRank === 'J' && localRules.jackPeek && !gs.jackPeekUsed && !visible) || isQueenSpecialWithTarget || isJackSpecial
+              const alreadyPeeked = Boolean(playerId && gs?.hands?.[playerId]?.peekedIndices?.includes(i))
+              const canClick = (gs.phase === 'peek' && gs.peeks < 2 && !alreadyPeeked)
+                || gs.phase === 'p_hold'
+                || (gs.phase === 'p_draw' && localRules.discardMatch)
+                || (gs.phase === 'p_hold' && heldRank === 'J' && localRules.jackPeek && !gs.jackPeekUsed && !visible)
+                || isQueenSpecialWithTarget
+                || isJackSpecial
               const handleClick = () => {
-                if (gs.phase === 'peek')   handlePeek(i)
-                if (gs.phase === 'p_hold') {
-                  if (heldRank === 'J' && localRules.jackPeek && !gs.jackPeekUsed && !visible) handlePeekOwnCard(i)
-                  else swapCard(i)
+                if (gs.phase === 'peek') {
+                  handlePeek(i)
+                  return
                 }
-                if (gs.phase === 'p_draw' && localRules.discardMatch) toggleSelectedDiscard(i)
-                if (isQueenSpecialWithTarget) swapCard(i)
-                if (isJackSpecial) handlePeekOwnCard(i)
+                if (gs.phase === 'p_hold') {
+                  if (isJackSpecial) {
+                    handlePeekOwnCard(i)
+                    return
+                  }
+                  if (heldRank === 'J' && localRules.jackPeek && !gs.jackPeekUsed && !visible) {
+                    handlePeekOwnCard(i)
+                    return
+                  }
+                  swapCard(i)
+                  return
+                }
+                if (gs.phase === 'p_draw' && localRules.discardMatch) {
+                  toggleSelectedDiscard(i)
+                  return
+                }
+                if (isQueenSpecialWithTarget) {
+                  swapCard(i)
+                  return
+                }
               }
               const isSelected = gs.phase === 'p_draw' && gs.selected?.includes(i)
               const glowCard = gs.phase === 'p_hold' || (gs.phase === 'peek' && gs.peeks < 2 && !gs.pVis?.[i]) || isSelected || (gs.phase === 'p_hold' && heldRank === 'J' && localRules.jackPeek && !gs.jackPeekUsed && !visible) || isQueenSpecialWithTarget || isJackSpecial

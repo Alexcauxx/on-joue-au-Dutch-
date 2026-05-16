@@ -94,25 +94,96 @@ export function useMultiplayerGame({
     gameStateRef.current = gameState
   }, [gameState])
 
+  const isIndexValid = useCallback((array: any[] | undefined, index: number) => {
+    return Array.isArray(array) && Number.isInteger(index) && index >= 0 && index < array.length
+  }, [])
+
+  const assertCanAct = useCallback((actionName: string, allowedPhases?: GamePhase[]) => {
+    if (!gameState) {
+      console.warn('ACTION_BLOCKED_NO_GAME_STATE', { actionName, playerId })
+      return false
+    }
+    if (!isMyTurn) {
+      console.warn('ACTION_BLOCKED_NOT_PLAYER_TURN', {
+        actionName,
+        localPlayerId: playerId,
+        currentPlayerId,
+        phase: gameState.phase,
+      })
+      return false
+    }
+    if (allowedPhases && !allowedPhases.includes(gameState.phase)) {
+      console.warn('ACTION_BLOCKED_INVALID_PHASE', {
+        actionName,
+        phase: gameState.phase,
+        allowedPhases,
+      })
+      return false
+    }
+    return true
+  }, [gameState, isMyTurn, playerId, currentPlayerId])
+
+  const validateGameState = useCallback((state: GameState, context: string) => {
+    const validateCard = (card: Card | null | undefined) => {
+      if (!isValidCard(card)) {
+        console.error('INVALID_CARD_DETECTED', { context, card })
+        return false
+      }
+      return true
+    }
+
+    if (!state || !Array.isArray(state.deck) || !Array.isArray(state.discardPile) || typeof state.hands !== 'object' || !Array.isArray(state.playerOrder)) {
+      console.error('GAME_STATE_VALIDATION_FAILED', { context, state })
+      return false
+    }
+
+    for (const card of state.deck) if (!validateCard(card)) return false
+    for (const card of state.discardPile) if (!validateCard(card)) return false
+
+    for (const pid of Object.keys(state.hands)) {
+      const hand = state.hands[pid]
+      if (!hand || !Array.isArray(hand.cards)) {
+        console.error('GAME_STATE_VALIDATION_FAILED', { context, pid, hand })
+        return false
+      }
+      for (const card of hand.cards) if (!validateCard(card)) return false
+      if (Array.isArray(hand.peekedIndices)) {
+        if (!hand.peekedIndices.every(i => Number.isInteger(i) && i >= 0 && i < hand.cards.length)) {
+          console.error('INVALID_PEEK_INDEX', { context, pid, peekedIndices: hand.peekedIndices, handLength: hand.cards.length })
+          return false
+        }
+      }
+    }
+
+    return true
+  }, [])
+
   // ── Utilitaire : sauvegarder l'état ────────────────────────
-  const save = useCallback(async (newState: GameState) => {
+  const save = useCallback(async (newState: GameState, context = 'save') => {
+    if (!validateGameState(newState, context)) {
+      setError('État de jeu invalide détecté. Action annulée.')
+      return
+    }
+
     try {
       await updateGameState(gameId, newState)
       setError(null)
     } catch (e) {
       setError('Erreur de synchronisation. Vérifie ta connexion.')
     }
-  }, [gameId])
+  }, [gameId, validateGameState])
 
   const jackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearJackTimer = useCallback(() => {
     if (jackTimerRef.current !== null) {
       clearTimeout(jackTimerRef.current)
       jackTimerRef.current = null
+      console.log('JACK_TIMER_CANCELLED')
     }
   }, [])
 
   const cancelPendingEffect = useCallback(() => {
+    console.log('JACK_PENDING_EFFECT_CLEARED')
     clearJackTimer()
   }, [clearJackTimer])
 
@@ -228,23 +299,44 @@ export function useMultiplayerGame({
    * Quand tous ont regardé 2 cartes → phase 'draw'.
    */
   const peekCard = useCallback(async (cardIndex: number) => {
-    if (!gameState || !isMyTurn || phase !== 'peek') return
+    if (!gameState) {
+      console.warn('ACTION_BLOCKED_NO_GAME_STATE', { actionName: 'peekCard', playerId })
+      return
+    }
+    if (gameState.phase !== 'peek') {
+      console.warn('ACTION_BLOCKED_INVALID_PHASE', { actionName: 'peekCard', phase: gameState.phase })
+      return
+    }
+    if (!isIndexValid(gameState.hands[playerId]?.cards, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'peekCard', playerId, cardIndex })
+      return
+    }
 
     const currentPeeks = gameState.peeksDone?.[playerId] ?? 0
-    if (currentPeeks >= 2) return
+    if (currentPeeks >= 2) {
+      console.log('CARD_CLICK_BLOCKED', { actionName: 'peekCard', playerId, cardIndex, reason: 'MAX_PEEKS_REACHED' })
+      return
+    }
 
     const alreadyPeeked = gameState.hands[playerId]?.peekedIndices?.includes(cardIndex)
     if (alreadyPeeked) {
       console.log('PEEK IGNORED - card already peeked', { playerId, cardIndex })
+      console.log('CARD_CLICK_BLOCKED', { actionName: 'peekCard', playerId, cardIndex, reason: 'ALREADY_PEEKED' })
       return
     }
+
+    console.log('INITIAL_PEEK_PHASE_ACTIVE', { playerId, phase: gameState.phase, cardIndex })
+    console.log('INITIAL_CARD_PEEKED', { playerId, cardIndex, currentPeeks: currentPeeks + 1 })
 
     const newPeekedIndices = [...(gameState.hands[playerId]?.peekedIndices ?? []), cardIndex]
     const newPeeksDone = { ...(gameState.peeksDone ?? {}) }
     newPeeksDone[playerId] = currentPeeks + 1
 
-    const nextIndex = (gameState.currentPlayerIndex + 1) % gameState.playerOrder.length
     const allReady = gameState.playerOrder.every(pid => (newPeeksDone[pid] ?? 0) >= 2)
+    console.log('INITIAL_PEEK_COUNT_UPDATED', { playerId, peeks: newPeeksDone[playerId], allReady })
+    if (newPeeksDone[playerId] === 2) {
+      console.log('PLAYER_INITIAL_PEEK_DONE', { playerId })
+    }
 
     const newState: GameState = {
       ...gameState,
@@ -256,22 +348,26 @@ export function useMultiplayerGame({
           peekedIndices: newPeekedIndices,
         },
       },
-      currentPlayerIndex: nextIndex,
-      phase: 'peek',
-      msg: 'Espionnage en cours...',
+      currentPlayerIndex: allReady ? 0 : gameState.currentPlayerIndex,
+      phase: allReady ? 'draw' : 'peek',
+      msg: allReady ? 'Phase de pioche — à vous de jouer.' : 'Espionnage en cours...',
+    }
+
+    if (allReady) {
+      console.log('ALL_PLAYERS_INITIAL_PEEK_DONE', { playerId, peeksDone: newPeeksDone })
     }
 
     await save(newState)
-  }, [gameState, playerId, phase, isMyTurn, save])
+  }, [gameState, playerId, save])
 
   /**
    * Piocher une carte dans la pioche.
    * Disponible uniquement pendant la phase 'draw' et quand c'est ton tour.
    */
   const drawFromDeck = useCallback(async () => {
-    if (!gameState || !isMyTurn || phase !== 'draw') return
+    if (!assertCanAct('drawFromDeck', ['draw'])) return
 
-    const stateWithDeck = ensureDeck(gameState)
+    const stateWithDeck = ensureDeck(gameState!)
     if (stateWithDeck.deck.length === 0) {
       setError('Plus de cartes dans la pioche !')
       return
@@ -294,8 +390,8 @@ export function useMultiplayerGame({
    * L'échange est alors obligatoire (pas de défausse possible).
    */
   const takeFromDiscard = useCallback(async () => {
-    if (!gameState || !isMyTurn || phase !== 'draw') return
-    if (gameState.discardPile.length === 0) return
+    if (!assertCanAct('takeFromDiscard', ['draw'])) return
+    if (!gameState?.discardPile.length) return
 
     const discardPile = [...gameState.discardPile]
     const taken       = discardPile.pop()!
@@ -314,17 +410,21 @@ export function useMultiplayerGame({
    * La carte remplacée part sur la défausse.
    */
   const swapWithHand = useCallback(async (cardIndex: number) => {
-    if (!gameState || !isMyTurn) return
+    if (!assertCanAct('swapWithHand', ['hold'])) return
     // Allow swapping during a queen specialAction (even if held is null)
     const heldRank = gameState.held ? (gameState.held.v ?? gameState.held.rank) : null
     const isQueenSpecial = gameState.specialAction?.type === 'queen' && gameState.specialAction?.actorId === playerId
     // Handle queen specialAction when opponent card was selected first
     if (isQueenSpecial && gameState.specialAction?.firstSelection && gameState.specialAction.firstSelection.owner === 'opponent') {
       const myCards = [...gameState.hands[playerId].cards]
+      if (!isIndexValid(myCards, cardIndex)) {
+        console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'swapWithHand', playerId, cardIndex })
+        return
+      }
       const opponentId = gameState.playerOrder.find(id => id !== playerId)
       const oH = [...(opponentId ? gameState.hands[opponentId]?.cards ?? [] : [])]
       const targetIndex = gameState.specialAction.firstSelection.index
-      if (targetIndex == null || targetIndex < 0 || targetIndex >= oH.length) return
+      if (!isIndexValid(oH, targetIndex)) return
 
       const opponentCard = oH[targetIndex]
       const replaced = myCards[cardIndex]
@@ -354,10 +454,14 @@ export function useMultiplayerGame({
 
     if (gameState.queenSwapTarget !== null && (heldRank === 'Q' || isQueenSpecial)) {
       const myCards = [...gameState.hands[playerId].cards]
+      if (!isIndexValid(myCards, cardIndex)) {
+        console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'swapWithHand', playerId, cardIndex })
+        return
+      }
       const opponentId = gameState.playerOrder.find(id => id !== playerId)
       const oH = [...(opponentId ? gameState.hands[opponentId]?.cards ?? [] : [])]
       const targetIndex = gameState.queenSwapTarget
-      if (targetIndex == null || targetIndex < 0 || targetIndex >= oH.length) return
+      if (!isIndexValid(oH, targetIndex)) return
 
       const opponentCard = oH[targetIndex]
       const replaced = myCards[cardIndex]
@@ -388,6 +492,10 @@ export function useMultiplayerGame({
     }
 
     const myCards = [...gameState.hands[playerId].cards]
+    if (!isIndexValid(myCards, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'swapWithHand', playerId, cardIndex })
+      return
+    }
     const replaced = myCards[cardIndex]
     myCards[cardIndex] = gameState.held
     const replacedRank = replaced?.v ?? replaced?.rank
@@ -442,8 +550,8 @@ export function useMultiplayerGame({
    * Si elle vient de la défausse, l'échange est obligatoire.
    */
   const discardHeld = useCallback(async () => {
-    if (!gameState || !isMyTurn) return
-    if (!gameState.held || gameState.heldFrom === 'discard') return
+    if (!assertCanAct('discardHeld', ['hold'])) return
+    if (!gameState?.held || gameState.heldFrom === 'discard') return
 
     const heldRank = gameState.held.v ?? gameState.held.rank
 
@@ -451,6 +559,9 @@ export function useMultiplayerGame({
     if (heldRank === 'Q' || heldRank === 'J') {
       const specialType = heldRank === 'Q' ? 'queen' : 'jack'
       console.log('SPECIAL ACTION STARTED FROM DISCARD_HELD', specialType, { playerId, held: gameState.held })
+      if (specialType === 'jack') {
+        console.log('JACK_EFFECT_STARTED', { playerId, held: gameState.held })
+      }
       const newState: GameState = {
         ...gameState,
         discardPile: [...gameState.discardPile, (isValidCard(gameState.held) ? normalizeCard(gameState.held) : normalizeCard(gameState.held))],
@@ -490,13 +601,19 @@ export function useMultiplayerGame({
    * Les autres joueurs ont chacun un dernier tour, puis fin de manche.
    */
   const swapWithOpponent = useCallback(async (cardIndex: number) => {
-    if (!gameState || !isMyTurn) return
-    const heldValue = gameState.held?.v ?? gameState.held?.rank
-    const isQueenSpecial = gameState.specialAction?.type === 'queen' && gameState.specialAction?.actorId === playerId
-    if (!( (gameState.held && heldValue === 'Q') || isQueenSpecial )) return
-    if (gameState.queenSwapTarget !== null) return
+    if (!assertCanAct('swapWithOpponent', ['hold'])) return
+    const heldValue = gameState?.held?.v ?? gameState?.held?.rank
+    const isQueenSpecial = gameState?.specialAction?.type === 'queen' && gameState?.specialAction?.actorId === playerId
+    if (!( (gameState?.held && heldValue === 'Q') || isQueenSpecial )) return
+    if (gameState?.queenSwapTarget !== null) return
     // Allow during held phase OR during queen specialAction
     if (phase !== 'hold' && !isQueenSpecial) return
+    if (!gameState) return
+    const opponentId = gameState.playerOrder.find(id => id !== playerId)
+    if (!opponentId || !isIndexValid(gameState.hands[opponentId]?.cards, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'swapWithOpponent', playerId, cardIndex })
+      return
+    }
 
     // If specialAction exists (queen), use firstSelection flow
     if (isQueenSpecial) {
@@ -520,14 +637,29 @@ export function useMultiplayerGame({
   }, [gameState, isMyTurn, phase, save])
 
   const peekOpponentCard = useCallback(async (cardIndex: number) => {
-    if (!gameState || !isMyTurn || phase !== 'hold') return
-    const heldRank = gameState.held?.v ?? gameState.held?.rank
-    const isJackSpecial = gameState.specialAction?.type === 'jack' && gameState.specialAction?.actorId === playerId
-    if (!( (gameState.held && heldRank === 'J') || isJackSpecial )) return
-    if (gameState.jackPeekUsed) {
-      console.log('JACK EFFECT BLOCKED - already used', { playerId })
+    console.log('JACK_PEEK_CARD_CLICK_ATTEMPT', { playerId, cardIndex, target: 'opponent' })
+    if (!assertCanAct('peekOpponentCard', ['hold'])) {
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'CANNOT_ACT' })
       return
     }
+    const heldRank = gameState?.held?.v ?? gameState?.held?.rank
+    const isJackSpecial = gameState?.specialAction?.type === 'jack' && gameState?.specialAction?.actorId === playerId
+    if (!( (gameState?.held && heldRank === 'J') || isJackSpecial )) {
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'NO_JACK_EFFECT' })
+      return
+    }
+    const opponentId = gameState?.playerOrder.find(id => id !== playerId)
+    if (!opponentId || !isIndexValid(gameState.hands[opponentId]?.cards, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'peekOpponentCard', playerId, cardIndex })
+      return
+    }
+    if (gameState.jackPeekUsed) {
+      console.log('JACK_EFFECT_BLOCKED - already used', { playerId })
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'ALREADY_USED' })
+      return
+    }
+
+    console.log('JACK_PEEK_ALLOWED', { playerId, cardIndex, target: 'opponent' })
 
     const discardPile = [...gameState.discardPile]
     if (gameState.held) discardPile.push(isValidCard(gameState.held) ? normalizeCard(gameState.held) : normalizeCard(gameState.held))
@@ -546,19 +678,34 @@ export function useMultiplayerGame({
     const newState = advanceTurn(resolvedState)
     cancelPendingEffect()
 
-    console.log('JACK EFFECT COMPLETED (opponent peek)', { playerId, cardIndex })
+    console.log('JACK_PEEK_TARGET_OPPONENT_CARD', { playerId, cardIndex, opponentId })
+    console.log('JACK_PEEK_RESOLVED', { playerId, cardIndex, target: 'opponent' })
     await save(newState)
   }, [gameState, isMyTurn, phase, advanceTurn, save, clearJackTimer])
 
   const peekOwnCard = useCallback(async (cardIndex: number) => {
-    if (!gameState || !isMyTurn || phase !== 'hold') return
-    const heldRank = gameState.held?.v ?? gameState.held?.rank
-    const isJackSpecial = gameState.specialAction?.type === 'jack' && gameState.specialAction?.actorId === playerId
-    if (!( (gameState.held && heldRank === 'J') || isJackSpecial )) return
-    if (gameState.jackPeekUsed) {
-      console.log('JACK EFFECT BLOCKED - already used', { playerId })
+    console.log('JACK_PEEK_CARD_CLICK_ATTEMPT', { playerId, cardIndex, target: 'own' })
+    if (!assertCanAct('peekOwnCard', ['hold'])) {
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'CANNOT_ACT' })
       return
     }
+    const heldRank = gameState?.held?.v ?? gameState?.held?.rank
+    const isJackSpecial = gameState?.specialAction?.type === 'jack' && gameState?.specialAction?.actorId === playerId
+    if (!( (gameState?.held && heldRank === 'J') || isJackSpecial )) {
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'NO_JACK_EFFECT' })
+      return
+    }
+    if (!isIndexValid(gameState?.hands[playerId]?.cards, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'peekOwnCard', playerId, cardIndex })
+      return
+    }
+    if (gameState.jackPeekUsed) {
+      console.log('JACK_EFFECT_BLOCKED - already used', { playerId })
+      console.log('JACK_PEEK_BLOCKED', { playerId, cardIndex, reason: 'ALREADY_USED' })
+      return
+    }
+
+    console.log('JACK_PEEK_ALLOWED', { playerId, cardIndex, target: 'own' })
 
     const discardPile = [...gameState.discardPile]
     if (gameState.held) discardPile.push(isValidCard(gameState.held) ? normalizeCard(gameState.held) : normalizeCard(gameState.held))
@@ -577,13 +724,19 @@ export function useMultiplayerGame({
     const newState = advanceTurn(resolvedState)
     cancelPendingEffect()
 
-    console.log('JACK EFFECT COMPLETED (own peek)', { playerId, cardIndex })
+    console.log('JACK_PEEK_TARGET_OWN_CARD', { playerId, cardIndex })
+    console.log('JACK_PEEK_RESOLVED', { playerId, cardIndex, target: 'own' })
     await save(newState)
   }, [gameState, isMyTurn, phase, advanceTurn, save, clearJackTimer])
 
   const toggleSelectedDiscard = useCallback((cardIndex: number) => {
-    if (!gameState || phase !== 'draw') return
-    if (!gameState.discardPile.length) return
+    if (!assertCanAct('toggleSelectedDiscard', ['draw'])) return
+    const hand = gameState?.hands[playerId]?.cards
+    if (!isIndexValid(hand, cardIndex)) {
+      console.warn('ACTION_BLOCKED_INVALID_CARD_INDEX', { actionName: 'toggleSelectedDiscard', playerId, cardIndex })
+      return
+    }
+    if (!gameState?.discardPile.length) return
 
     const selected = gameState.selected?.includes(cardIndex)
       ? gameState.selected.filter(i => i !== cardIndex)
@@ -593,10 +746,12 @@ export function useMultiplayerGame({
   }, [gameState, phase, save])
 
   const validateDiscardSelection = useCallback(async () => {
-    if (!gameState || phase !== 'draw' || !gameState.selected?.length || !gameState.discardPile.length) return
+    if (!assertCanAct('validateDiscardSelection', ['draw'])) return
+    if (!gameState?.selected?.length || !gameState.discardPile.length) return
 
     const top = gameState.discardPile[gameState.discardPile.length - 1]
-    const selectedCards = gameState.selected.map(i => gameState.hands[playerId].cards[i])
+    const selectedIndices = gameState.selected.filter(i => isIndexValid(gameState.hands[playerId]?.cards, i))
+    const selectedCards = selectedIndices.map(i => gameState.hands[playerId].cards[i])
     const valid = selectedCards.every(c =>
       (c.v ?? c.rank) === (top.v ?? top.rank) ||
       (c.s ?? c.suit) === (top.s ?? top.suit)
@@ -651,8 +806,8 @@ export function useMultiplayerGame({
   }, [gameState, phase, playerId, save, game])
 
   const callDutch = useCallback(async () => {
-    if (!gameState || !isMyTurn || phase !== 'draw') return
-    if (gameState.dutchCallerId) return   // Dutch déjà annoncé
+    if (!assertCanAct('callDutch', ['draw'])) return
+    if (!gameState || gameState.dutchCallerId) return   // Dutch déjà annoncé
 
     const lastTurnPlayers = gameState.playerOrder.filter(pid => pid !== playerId)
 
